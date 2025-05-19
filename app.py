@@ -1,6 +1,7 @@
 # app.py
 import streamlit as st
-import json, os, time
+import json, os
+from datetime import time
 from main import (
     hash_password, load_user_data, save_user_data,
     USER_FILE, USER_DATA_DIR, GROUP_DIR
@@ -78,71 +79,246 @@ def dashboard():
         st.warning("⛔ Kamu sedang menjalankan Pomodoro! Selesaikan dulu sebelum berpindah menu.")
         st.stop()
 
+    # if menu == "📝 To-Do List":
+    #     data = load_user_data(st.session_state.user)
+    #     st.header("📋 To-Do List & Statistik")
+    #     st.markdown("---")
+    #     task = st.text_input("➕ Tambah tugas baru", key="new_task")
+    #     if st.button("Tambahkan", key="add_task_btn"):
+    #         data["tasks"].append({"task": task, "done": False})
+    #         save_user_data(st.session_state.user, data)
+
+    #     st.subheader("📌 Daftar Tugas")
+    #     for i, t in enumerate(data["tasks"]):
+    #         col1, col2 = st.columns([0.85, 0.15])
+    #         with col1:
+    #             st.write(f"- {t['task']}")
+    #         with col2:
+    #             if not t["done"]:
+    #                 if st.button("Selesai", key=f"done_{i}"):
+    #                     data["tasks"][i]["done"] = True
+    #                     data["completed_tasks"] += 1
+    #                     save_user_data(st.session_state.user, data)
+    #                     st.rerun()
+
+    #     st.markdown("---")
+    #     st.subheader("📈 Statistik")
+    #     total = len(data["tasks"])
+    #     done = data["completed_tasks"]
+    #     focus = data["focus_time_minutes"]
+    #     progress = (done / total) * 100 if total else 0
+    #     st.write(f"- Total tugas     : {total}")
+    #     st.write(f"- Tugas selesai   : {done}")
+    #     st.write(f"- Waktu fokus     : {focus} menit")
+    #     st.progress(progress / 100)
+
+    #     weekly = data.get("weekly_focus", {})
+    #     days = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+    #     focus_values = [weekly.get(day, 0) for day in days]
+
+    #     st.subheader("📅 Fokus Mingguan")
+    #     # fig, ax = plt.subplots()
+    #     # ax.bar(days, focus_values, color="skyblue")
+    #     # ax.set_ylabel("Menit Fokus")
+    #     # ax.set_title("Grafik Fokus per Hari")
+    #     # plt.xticks(rotation=45)
+    #     # st.pyplot(fig)
+    #     # Buat dataframe untuk line chart
+    #     # Buat dataframe untuk line chart
+    #     import pandas as pd
+    #     from datetime import datetime  # Import datetime here
+        
+    #     focus_data = pd.DataFrame({
+    #         "Hari": days,
+    #         "Menit Fokus": focus_values
+    #     })
+        
+    #     # Tampilkan line chart dengan berbagai customisasi
+    #     st.line_chart(
+    #         focus_data.set_index("Hari"),
+    #         height=400,
+    #         use_container_width=True,
+    #         color="#FF4B4B"  # Warna merah yang menarik
+    #     )
+        
+    #     # Tambahkan metric untuk hari ini
+    #     today_en = datetime.now().strftime("%A")  # English day name
+    #     # Map English day names to Indonesian
+    #     day_map = {
+    #         "Monday": "Senin",
+    #         "Tuesday": "Selasa",
+    #         "Wednesday": "Rabu",
+    #         "Thursday": "Kamis",
+    #         "Friday": "Jumat",
+    #         "Saturday": "Sabtu",
+    #         "Sunday": "Minggu"
+    #     }
+    #     today_id = day_map.get(today_en, today_en)
+    #     st.metric(
+    #         label=f"Fokus Hari Ini ({today_id})",
+    #         value=f"{weekly.get(today_id, 0)} menit"
+    #     )
+
     if menu == "📝 To-Do List":
+        from datetime import datetime, date, time  # Tambahkan import time dari datetime
+        import pandas as pd
+
         data = load_user_data(st.session_state.user)
         st.header("📋 To-Do List & Statistik")
         st.markdown("---")
+
+        # Input tambah tugas + deadline
         task = st.text_input("➕ Tambah tugas baru", key="new_task")
-        if st.button("Tambahkan", key="add_task_btn"):
-            data["tasks"].append({"task": task, "done": False})
+        deadline_date = st.date_input("📅 Tanggal deadline", min_value=date.today(), key="deadline_date")
+        deadline_time = st.time_input("🕒 Jam deadline", value=datetime.now().time().replace(hour=23, minute=59), key="deadline_time")
+        deadline_dt = datetime.combine(deadline_date, deadline_time)
+        
+        if st.button("Tambahkan", key="add_task_btn") and task:
+            data["tasks"].append({
+                "task": task,
+                "done": False,
+                "deadline": deadline_dt.isoformat(),
+                "completed_time": None
+            })
             save_user_data(st.session_state.user, data)
+            st.success("Tugas berhasil ditambahkan!")
+            st.rerun()
 
         st.subheader("📌 Daftar Tugas")
-        for i, t in enumerate(data["tasks"]):
+
+        # Filter & sort
+        sort_option = st.selectbox("🔃 Urutkan berdasarkan deadline:", ["Terdekat", "Terlama"], key="sort_deadline")
+
+        # Konversi deadline ke datetime dan sort
+        def get_deadline(task):
+            try:
+                return datetime.fromisoformat(task["deadline"])
+            except:
+                return datetime.max
+
+        tasks_sorted = sorted(data["tasks"], key=get_deadline, reverse=(sort_option == "Terlama"))
+
+        now = datetime.now()
+
+        for i, t in enumerate(tasks_sorted):
             col1, col2 = st.columns([0.85, 0.15])
+            deadline = datetime.fromisoformat(t["deadline"])
+
             with col1:
-                st.write(f"- {t['task']}")
+                deadline_str = deadline.strftime("%d-%m-%Y %H:%M")
+                status_line = f"- {t['task']} (🕒 Deadline: {deadline_str})"
+
+                if not t["done"] and now > deadline:
+                    status_line += " ❗ **Terlambat!**"
+                elif t["done"] and t["completed_time"]:
+                    completed_time = datetime.fromisoformat(t["completed_time"])
+                    if completed_time > deadline:
+                        status_line += " ✅ (Selesai tapi terlambat)"
+                    else:
+                        status_line += " ✅ (Selesai tepat waktu)"
+                st.markdown(status_line)
+
             with col2:
                 if not t["done"]:
-                    if st.button("Selesai", key=f"done_{i}"):
-                        data["tasks"][i]["done"] = True
+                    if st.button("Selesai", key=f"done_{i}_{t['task']}"):
+                        t["done"] = True
+                        t["completed_time"] = now.isoformat()
                         data["completed_tasks"] += 1
                         save_user_data(st.session_state.user, data)
                         st.rerun()
 
         st.markdown("---")
+
+        # Statistik
         st.subheader("📈 Statistik")
         total = len(data["tasks"])
         done = data["completed_tasks"]
         focus = data["focus_time_minutes"]
         progress = (done / total) * 100 if total else 0
+
         st.write(f"- Total tugas     : {total}")
         st.write(f"- Tugas selesai   : {done}")
         st.write(f"- Waktu fokus     : {focus} menit")
         st.progress(progress / 100)
 
+        # Di bagian Fokus Mingguan
         weekly = data.get("weekly_focus", {})
-        days = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
-        focus_values = [weekly.get(day, 0) for day in days]
+        days_order = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
 
-        st.subheader("📅 Fokus Mingguan")
-        # fig, ax = plt.subplots()
-        # ax.bar(days, focus_values, color="skyblue")
-        # ax.set_ylabel("Menit Fokus")
-        # ax.set_title("Grafik Fokus per Hari")
-        # plt.xticks(rotation=45)
-        # st.pyplot(fig)
-        # Buat dataframe untuk line chart
-        # Buat dataframe untuk line chart
-        import pandas as pd
-        from datetime import datetime  # Import datetime here
-        
+        # Mapping konversi Indonesia -> Inggris
+        day_translation = {
+            "Senin": "Monday",
+            "Selasa": "Tuesday",
+            "Rabu": "Wednesday",
+            "Kamis": "Thursday",
+            "Jumat": "Friday",
+            "Sabtu": "Saturday",
+            "Minggu": "Sunday"
+        }
+
+        # Konversi key ke bahasa Inggris
+        converted_weekly = {}
+        for day_id, minutes in weekly.items():
+            day_en = day_translation.get(day_id, day_id)
+            converted_weekly[day_en] = minutes
+
+        # Isi hari yang belum ada dengan 0
+        focus_values = [converted_weekly.get(day, 0) for day in days_order]
+
+        # Buat grafik
         focus_data = pd.DataFrame({
-            "Hari": days,
+            "Hari": days_order,
             "Menit Fokus": focus_values
         })
-        
-        # Tampilkan line chart dengan berbagai customisasi
+
         st.line_chart(
             focus_data.set_index("Hari"),
             height=400,
             use_container_width=True,
-            color="#FF4B4B"  # Warna merah yang menarik
+            color="#FF4B4B"
         )
-        
-        # Tambahkan metric untuk hari ini
-        today_en = datetime.now().strftime("%A")  # English day name
-        # Map English day names to Indonesian
+
+        # Metric Hari Ini
+        today_en = datetime.now().strftime("%A")
+        day_map = {
+            "Monday": "Senin", "Tuesday": "Selasa", "Wednesday": "Rabu",
+            "Thursday": "Kamis", "Friday": "Jumat", "Saturday": "Sabtu", "Sunday": "Minggu"
+        }
+
+        today_id = day_map.get(today_en, today_en)
+        st.metric(
+            label=f"Fokus Hari Ini ({today_id})",
+            value=f"{weekly.get(today_id, 0)} menit"
+        )
+
+
+    # elif menu == "⏳ Pomodoro":
+    #     st.header("⏳ Pomodoro Fokus")
+    #     duration = st.slider("Pilih durasi fokus (menit)", 5, 120, 25)
+
+    #     if st.button("Mulai Fokus", key="start_pomodoro"):
+    #         st.success("🧠 Fokus dimulai! Jangan buka media sosial dulu ya...")
+    #         placeholder = st.empty()
+    #         for i in range(duration * 60, 0, -1):
+    #             mins, secs = divmod(i, 60)
+    #             timer = f"{mins:02d}:{secs:02d}"
+    #             placeholder.markdown(f"<h2 style='text-align: center;'>⏳ {timer}</h2>", unsafe_allow_html=True)
+    #             time.sleep(1)
+
+    #         st.success("✅ Sesi fokus selesai! Saatnya istirahat.")
+
+    #         # Simpan ke data user
+    #         data = load_user_data(st.session_state.user)
+    #         data["focus_time_minutes"] += duration
+    #         day = datetime.now().strftime("%A")
+    #         data.setdefault("weekly_focus", {})
+    #         data["weekly_focus"][day] = data["weekly_focus"].get(day, 0) + duration
+    #         save_user_data(st.session_state.user, data)
+
+    elif menu == "⏳ Pomodoro":
+        st.header("⏳ Pomodoro Time")
+
+        # Definisikan mapping hari di sini
         day_map = {
             "Monday": "Senin",
             "Tuesday": "Selasa",
@@ -152,67 +328,87 @@ def dashboard():
             "Saturday": "Sabtu",
             "Sunday": "Minggu"
         }
-        today_id = day_map.get(today_en, today_en)
-        st.metric(
-            label=f"Fokus Hari Ini ({today_id})",
-            value=f"{weekly.get(today_id, 0)} menit"
-        )
+        import time
+        from datetime import datetime, timedelta
+        # Inisialisasi state
+        if 'pomodoro_active' not in st.session_state:
+            st.session_state.pomodoro_active = False
+        if 'pomodoro_start_time' not in st.session_state:
+            st.session_state.pomodoro_start_time = datetime.now()
+        if 'pomodoro_duration' not in st.session_state:
+            st.session_state.pomodoro_duration = 25
+        if 'last_update' not in st.session_state:
+            st.session_state.last_update = 0
 
-    elif menu == "⏳ Pomodoro":
-        st.header("⏳ Pomodoro Fokus")
-        duration = st.slider("Pilih durasi fokus (menit)", 5, 120, 25)
+        # Fungsi untuk memulai Pomodoro
+        def start_pomodoro():
+            st.session_state.pomodoro_active = True
+            st.session_state.pomodoro_start_time = datetime.now()
+            st.session_state.last_update = 0
 
-        if st.button("Mulai Fokus", key="start_pomodoro"):
-            st.success("🧠 Fokus dimulai! Jangan buka media sosial dulu ya...")
-            placeholder = st.empty()
-            for i in range(duration * 60, 0, -1):
-                mins, secs = divmod(i, 60)
-                timer = f"{mins:02d}:{secs:02d}"
-                placeholder.markdown(f"<h2 style='text-align: center;'>⏳ {timer}</h2>", unsafe_allow_html=True)
-                time.sleep(1)
-
-            st.success("✅ Sesi fokus selesai! Saatnya istirahat.")
-
-            # Simpan ke data user
-            data = load_user_data(st.session_state.user)
-            data["focus_time_minutes"] += duration
-            day = datetime.now().strftime("%A")
-            data.setdefault("weekly_focus", {})
-            data["weekly_focus"][day] = data["weekly_focus"].get(day, 0) + duration
-            save_user_data(st.session_state.user, data)
-
-    elif menu == "⏳ Pomodoro":
-        st.header("⏳ Pomodoro Time")
-
-        import datetime
+        # Fungsi untuk menghentikan Pomodoro
+        def stop_pomodoro():
+            if st.session_state.pomodoro_start_time:
+                elapsed = datetime.now() - st.session_state.pomodoro_start_time
+                elapsed_minutes = int(elapsed.total_seconds() / 60)
+                
+                if elapsed_minutes > 0:
+                    data = load_user_data(st.session_state.user)
+                    data["focus_time_minutes"] += elapsed_minutes
+                    
+                    today_en = datetime.now().strftime("%A")
+                    today_id = day_map.get(today_en, today_en)
+                    data.setdefault("weekly_focus", {})
+                    data["weekly_focus"][today_id] = data["weekly_focus"].get(today_id, 0) + elapsed_minutes
+                    save_user_data(st.session_state.user, data)
+            
+            st.session_state.pomodoro_active = False
+            st.session_state.pomodoro_start_time = None
 
         if not st.session_state.pomodoro_active:
-            duration = st.slider("Durasi Pomodoro (menit)", 5, 60, 25)
-            if st.button("▶️ Mulai Pomodoro"):
-                st.session_state.pomodoro_active = True
-                st.session_state.pomodoro_end_time = datetime.datetime.now() + datetime.timedelta(minutes=duration)
-                st.success(f"Pomodoro dimulai selama {duration} menit! Jangan pindah menu ya 🙌")
-                st.rerun()
+            st.session_state.pomodoro_duration = st.slider("Durasi Pomodoro (menit)", 1, 120, 25)
+            if st.button("▶️ Mulai Pomodoro", on_click=start_pomodoro):
+                pass
         else:
-            now = datetime.datetime.now()
-            end = st.session_state.pomodoro_end_time
-            remaining = (end - now).total_seconds()
-
+            if st.session_state.pomodoro_start_time is None:
+                st.error("Error: Waktu mulai tidak valid")
+                st.session_state.pomodoro_active = False
+                st.rerun()
+            
+            now = datetime.now()
+            elapsed = now - st.session_state.pomodoro_start_time
+            remaining = st.session_state.pomodoro_duration * 60 - elapsed.total_seconds()
+            
             if remaining > 0:
                 minutes = int(remaining // 60)
                 seconds = int(remaining % 60)
-                st.info(f"⏳ Waktu tersisa: {minutes:02d}:{seconds:02d}")
+                
+                timer_placeholder = st.empty()
+                timer_placeholder.info(f"⏳ Waktu tersisa: {minutes:02d}:{seconds:02d}")
                 st.write("📌 Fokus dulu, jangan pindah ke menu lain ya!")
-                st.button("⏹️ Paksa Berhenti Pomodoro", on_click=lambda: st.session_state.update({
-                    "pomodoro_active": False,
-                    "pomodoro_end_time": None
-                }))
+                
+                if st.button("⏹️ Hentikan Pomodoro", on_click=stop_pomodoro):
+                    pass
+                
+                # Gunakan time.sleep dari modul time, bukan datetime.time
+                time.sleep(1)
                 st.rerun()
             else:
-                st.success("✅ Pomodoro selesai! Silakan lanjutkan aktivitasmu.")
+                st.success("✅ Pomodoro selesai! Silakan istirahat sejenak.")
                 st.balloons()
+                
+                data = load_user_data(st.session_state.user)
+                data["focus_time_minutes"] += st.session_state.pomodoro_duration
+                
+                today_en = datetime.now().strftime("%A")
+                today_id = day_map.get(today_en, today_en)
+                data.setdefault("weekly_focus", {})
+                data["weekly_focus"][today_id] = data["weekly_focus"].get(today_id, 0) + st.session_state.pomodoro_duration
+                save_user_data(st.session_state.user, data)
+                
                 st.session_state.pomodoro_active = False
-                st.session_state.pomodoro_end_time = None
+                st.session_state.pomodoro_start_time = None
+                time.sleep(3)
                 st.rerun()
 
 
